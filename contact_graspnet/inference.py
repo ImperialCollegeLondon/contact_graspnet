@@ -60,8 +60,8 @@ def inference(global_config, checkpoint_dir, input_paths, K=None, local_regions=
         pc_segments = {}
         segmap, rgb, depth, cam_K, pc_full, pc_colors = load_available_input_data(p, K=K)
         
-        if segmap is None and (local_regions or filter_grasps):
-            raise ValueError('Need segmentation map to extract local regions or filter grasps')
+        #if segmap is None and (local_regions or filter_grasps):
+        #    raise ValueError('Need segmentation map to extract local regions or filter grasps')
 
         if pc_full is None:
             print('Converting depth to point cloud(s)...')
@@ -71,14 +71,78 @@ def inference(global_config, checkpoint_dir, input_paths, K=None, local_regions=
         print('Generating Grasps...')
         pred_grasps_cam, scores, contact_pts, _ = grasp_estimator.predict_scene_grasps(sess, pc_full, pc_segments=pc_segments, 
                                                                                           local_regions=local_regions, filter_grasps=filter_grasps, forward_passes=forward_passes)  
+        #print("contact points:",type(contact_pts),contact_pts)
+        
+        # print(type(pred_grasps_cam))
+        # for key, value in pred_grasps_cam.items():
+        #     print (key, len(value))
+        # print(pred_grasps_cam[4.0][0])
+        # for key, value in scores.items():
+        #     print (key, len(value))
+        # print(type(scores))
+        # print("example score:",scores[4.0][0])
+        xmin = 632 +10
+        xmax = 712 -10
+        ymin = 436
+        ymax = 632
+        inside_pred_grasps_cam = {}
+        inside_scores={}
+        zeros_column = np.zeros((3, 1))
+        P = np.hstack((cam_K, zeros_column))     
+        for key, value in contact_pts.items():
+            inside_pred_grasps_cam[key]=[]
+            inside_scores[key]=[]
+            for idx, coor in enumerate(value):
+                uvw = np.dot(P, [coor[0], coor[1], coor[2], 1.0])
+                u = uvw[0] / uvw[2]
+                v = uvw[1] / uvw[2]
+                # Check if the point lies within the bounding box
+                if xmin <= u <= xmax and ymin <= v <= ymax:
+                    print(idx)
+                    inside_pred_grasps_cam[key].append(pred_grasps_cam[key][idx]) #pred_grasps_cam[key][idx])
+                    inside_scores[key].append(scores[key][idx])
+                    print("u,v:",u,v)
+                    print("z:",coor[2])
+                    print(pred_grasps_cam[key][idx])
+        sorted_indices = sorted(range(len(inside_scores[-1])), key=lambda i: inside_scores[-1][i], reverse=True)
+        sorted_pred_grasps_cam = [inside_pred_grasps_cam[-1][i] for i in sorted_indices]
+        sorted_scores = [inside_scores[-1][i] for i in sorted_indices]
+        print("sorted grasps")
+        print(sorted_pred_grasps_cam)
+        print("sorted scores")
+        print(sorted_scores)
+            # Convert the 3D point to the 2D image plane using the K matrix
 
-        # Save results
-        np.savez('results/predictions_{}'.format(os.path.basename(p.replace('png','npz').replace('npy','npz'))), 
-                  pred_grasps_cam=pred_grasps_cam, scores=scores, contact_pts=contact_pts)
-
-        # Visualize results          
-        show_image(rgb, segmap)
+            # if (len(value)!=0):
+            #     i = np.where(value == (max(value)))
+            #     highest_scores[key]=np.array(scores[key][i])
+            #     highest_pred_grasps_cam[key]=np.array(pred_grasps_cam[key][i])
+            # else:
+            #     highest_scores[key]=np.array([])
+            #     highest_pred_grasps_cam[key]=np.array([])
+        # highest_scores = {}
+        # highest_pred_grasps_cam = {}        
+        # for key, value in scores.items():
+        #     if (len(value)!=0):
+        #         i = np.where(value == (max(value)))
+        #         highest_scores[key]=np.array(scores[key][i])
+        #         highest_pred_grasps_cam[key]=np.array(pred_grasps_cam[key][i])
+        #     else:
+        #         highest_scores[key]=np.array([])
+        #         highest_pred_grasps_cam[key]=np.array([])
+        # print(highest_scores)
+        # print(highest_pred_grasps_cam)
+        
+        
+        # Save resultrs
+        # np.savez('results/predictions_{}'.format(os.path.basename(p.replace('png','npz').replace('npy','npz'))), 
+        #           pred_grasps_cam=pred_grasps_cam, scores=scores, contact_pts=contact_pts)
+        # print(highest_pred_grasps_cam)
+        # # Visualize results          
+        # show_image(rgb, segmap)
         visualize_grasps(pc_full, pred_grasps_cam, scores, plot_opencv_cam=True, pc_colors=pc_colors)
+        visualize_grasps(pc_full, inside_pred_grasps_cam, inside_scores, plot_opencv_cam=True, pc_colors=pc_colors)
+        # visualize_grasps(pc_full, highest_pred_grasps_cam, highest_scores, plot_opencv_cam=True, pc_colors=pc_colors)
         
     if not glob.glob(input_paths):
         print('No files found: ', input_paths)
